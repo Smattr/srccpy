@@ -87,8 +87,12 @@ int main(int argc, const char **argv) {
     std::string oldname(r, 0, equals),
                 newname(r, equals + 1);
     renames[oldname] = newname;
+    // Match definitions (including prototypes) of this function
     DeclarationMatcher matcher = functionDecl(hasName(oldname)).bind("func");
     Finder.addMatcher(matcher, &cb);
+    // Match calls to this function
+    StatementMatcher matcher2 = callExpr(callee(functionDecl(hasName(oldname)))).bind("func");
+    Finder.addMatcher(matcher2, &cb);
   }
 
   // Scan the input file, accumulating rewrites
@@ -144,6 +148,19 @@ void Callback::run(const MatchFinder::MatchResult &Result) {
       unsigned length = name.length();
       Replacement rep(*Result.SourceManager, start, length, llvm::StringRef(newname->second.c_str()));
       m_replace->insert(rep);
+    }
+  } else if (const CallExpr *c = Result.Nodes.getNodeAs<CallExpr>("func")) {
+    const FunctionDecl *f = c->getDirectCallee();
+    if (f != nullptr) {
+      auto nameinfo = f->getNameInfo();
+      string name = nameinfo.getAsString();
+      auto newname = renames.find(name);
+      if (newname != renames.end()) {
+        SourceLocation start = c->getLocStart();
+        unsigned length = name.length();
+        Replacement rep(*Result.SourceManager, start, length, llvm::StringRef(newname->second.c_str()));
+        m_replace->insert(rep);
+      }
     }
   }
 }

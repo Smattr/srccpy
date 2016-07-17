@@ -9,7 +9,7 @@ srccpy -rename=foo=bar -output=my_new_code.c my_code.c --
 
 It currently has the following abilities:
 
-  * Rename function definitions
+  * Rename functions
 
 ## Building
 
