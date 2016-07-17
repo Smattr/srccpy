@@ -9,6 +9,7 @@
  * clues as to how to proceed.
  */
 
+#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -60,8 +61,11 @@ static cl::alias output1("o", cl::desc("Alias for -output"), cl::aliasopt(Output
 static cl::list<string> Rename("rename",
   cl::desc("Rename a function or global variable (use as -rename=oldname=newname)"),
   cl::cat(Category));
+static cl::list<string> Delete("delete", cl::desc("Delete a function or global variable"),
+  cl::cat(Category));
 
 static unordered_map<string, string> renames;
+static set<string> deletions;
 
 int main(int argc, const char **argv) {
 
@@ -85,7 +89,7 @@ int main(int argc, const char **argv) {
       return EXIT_FAILURE;
     }
     string oldname(r, 0, equals),
-                newname(r, equals + 1);
+           newname(r, equals + 1);
     renames[oldname] = newname;
     // Match definitions (including prototypes) of this function
     DeclarationMatcher matcher = functionDecl(hasName(oldname)).bind("func");
@@ -93,6 +97,14 @@ int main(int argc, const char **argv) {
     // Match calls to this function
     StatementMatcher matcher2 = callExpr(callee(functionDecl(hasName(oldname)))).bind("func");
     Finder.addMatcher(matcher2, &cb);
+  }
+
+  // Set up all deletions
+  for (auto d : Delete) {
+    deletions.insert(d);
+    DeclarationMatcher matcher = functionDecl(hasName(d)).bind("func");
+    Finder.addMatcher(matcher, &cb);
+    // Note that we don't delete calls to the function
   }
 
   // Scan the input file, accumulating rewrites
@@ -144,9 +156,19 @@ void Callback::run(const MatchFinder::MatchResult &Result) {
     string name = nameinfo.getAsString();
     auto newname = renames.find(name);
     if (newname != renames.end()) {
+      // Function definition renaming
       SourceLocation start = nameinfo.getBeginLoc();
       unsigned length = name.length();
       Replacement rep(*Result.SourceManager, start, length, llvm::StringRef(newname->second.c_str()));
+      m_replace->insert(rep);
+    } else if (deletions.find(name) != deletions.end()) {
+      // Function definition deletion
+      SourceManager *manager = Result.SourceManager;
+      SourceRange range = f->getSourceRange();
+      SourceLocation start = range.getBegin();
+      SourceLocation end = range.getEnd();
+      unsigned length = manager->getFileOffset(end) - manager->getFileOffset(start) + 1;
+      Replacement rep(*Result.SourceManager, start, length, StringRef(""));
       m_replace->insert(rep);
     }
   } else if (const CallExpr *c = Result.Nodes.getNodeAs<CallExpr>("func")) {
@@ -156,6 +178,7 @@ void Callback::run(const MatchFinder::MatchResult &Result) {
       string name = nameinfo.getAsString();
       auto newname = renames.find(name);
       if (newname != renames.end()) {
+        // Function call renaming
         SourceLocation start = c->getLocStart();
         unsigned length = name.length();
         Replacement rep(*Result.SourceManager, start, length, llvm::StringRef(newname->second.c_str()));
