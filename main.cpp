@@ -61,7 +61,7 @@ static cl::list<string> Rename("rename",
   cl::desc("Rename a function or global variable (use as -rename=oldname=newname)"),
   cl::cat(Category));
 
-static std::unordered_map<string, string> renames;
+static unordered_map<string, string> renames;
 
 int main(int argc, const char **argv) {
 
@@ -80,11 +80,11 @@ int main(int argc, const char **argv) {
   // Set up all renames
   for (auto r : Rename) {
     size_t equals = r.find('=');
-    if (equals == std::string::npos) {
+    if (equals == string::npos) {
       llvm::errs() << "malformed argument -rename=" << r << "\n";
       return EXIT_FAILURE;
     }
-    std::string oldname(r, 0, equals),
+    string oldname(r, 0, equals),
                 newname(r, equals + 1);
     renames[oldname] = newname;
     // Match definitions (including prototypes) of this function
